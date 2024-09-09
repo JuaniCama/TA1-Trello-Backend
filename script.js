@@ -1,14 +1,18 @@
+// Definiciones y constantes globales
+const API_URL = "http://localhost:3000/api/tasks/";
+const columnsContainer = document.getElementById('columnsContainer');
+const toggleModeBtn = document.getElementById('toggleModeBtn');
+
+// Elementos del DOM
 const addTaskButton = document.getElementById('addTaskBtn');
 const taskModal = document.getElementById('taskModal');
 const closeModalButton = document.querySelector('.modal-background');
 const cancelTaskButton = document.getElementById('cancelTaskBtn');
 const taskForm = document.getElementById('taskForm');
-const toggleModeBtn = document.getElementById('toggleModeBtn');
+const saveTaskButton = document.getElementById('saveTaskBtn');
+const deleteTaskButton = document.getElementById('deleteTaskBtn');
 
-const serverURL = "http://localhost:3000/api/tasks/";
-
-
-// Inicio ADD TASKS --------------------------------
+// Objeto con las columnas de tareas
 let taskColumns = {
     backlog: document.getElementById('backlog').querySelector('.tasks'),
     todo: document.getElementById('todo').querySelector('.tasks'),
@@ -17,146 +21,87 @@ let taskColumns = {
     done: document.getElementById('done').querySelector('.tasks')
 };
 
-// Se renderizan todas las tareas en el DOM
-renderTasks();
-
-// Método POST
-async function postNewTask(title, description, assigned, deadline, status, priority) {
-    // Crear el objeto con los datos de la tarea
-    const newTask = {
-        title: title,
-        description: description,
-        assignedTo: assigned,
-        endDate: deadline,
-        status: status,
-        priority: priority
-    };
-    console.log("paso 1");
-    console.log(newTask);
-
+// Función para manejar las solicitudes fetch
+async function fetchData(url, options = {}) {
+    console.log("Realizando fetch a:", url, "con opciones:", options);
     try {
-        // Realizar la solicitud POST usando fetch
-        const response = await fetch(serverURL, {
-            method: "POST",  // Método HTTP POST
-            headers: {
-                "Content-Type": "application/json"  // Especificamos que el contenido es JSON
-            },
-            body: JSON.stringify(newTask)  // Convertimos el objeto JavaScript a un string JSON
-        });
-
-        // Verificar si la solicitud fue exitosa
+        const response = await fetch(url, options);
+        console.log("Respuesta del servidor:", response);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-
-        // Obtener la respuesta del servidor
-        const result = await response.json();
-        console.log("Task created successfully:", result);
-
+        return await response.json();
     } catch (error) {
-        console.error("Error creating new task:", error);
+        console.error("Error:", error);
+        return null;
     }
 }
 
-// metodo put
-function updateTask(id, title, description, assigned, priority, deadline) {
+// CRUD de tareas (Create, Read, Update, Delete)
 
+async function postNewTask(title, description, assigned, deadline, status, priority) {
+    console.log("Agregando nueva tarea con título:", title);
+    const newTask = { title, description, assignedTo: assigned, endDate: deadline, status, priority };
+    const result = await fetchData(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newTask)
+    });
+    console.log("Respuesta de creación de tarea:", result);
+    renderTasks();
+}
+
+async function updateTask(id, title, description, assigned, priority, deadline, status) {
+    const updatedTask = { title, description, assignedTo: assigned, priority, endDate: deadline, status };
+    const result = await fetchData(`${API_URL}${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedTask)
+    });
+    console.log("Tarea actualizada:", result);
+    renderTasks();
+}
+
+async function deleteTask(id) {
+    const result = await fetchData(`${API_URL}${id}`, { method: "DELETE" });
+    console.log("Tarea eliminada:", result);
+    renderTasks();
 }
 
 async function getAllTasks() {
-    try {
-        const response = await fetch(serverURL, { method: 'GET' });
-
-        // Check if the request was successful
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        // Parse JSON response
-        const tasks = await response.json();
-        console.log(tasks);
-
-
-        return tasks;
-    } catch (error) {
-        console.error("Error fetching tasks:", error);
-    }
+    return await fetchData(API_URL);
 }
 
-
-// Arreglo de persistencia de neuvas tareas en el DOM y duplicado de tareas tras recargar la página
+// Renderizar tareas
 async function renderTasks() {
-    let taskArray = await getAllTasks(); // Obtener todas las tareas del servidor
+    const taskArray = await getAllTasks();
+    if (taskArray) {
+        Object.values(taskColumns).forEach(column => column.innerHTML = ''); // Limpiar columnas
+        taskArray.forEach(task => {
+            const { title, description, assignedTo, priority, status, endDate, id } = task;
 
-    for (let i = 0; i < taskArray.length; i++) {
-        let task = taskArray[i];
-        let title = task.title;
-        let description = task.description;
-        let assigned = task.assignedTo;
-        let priority = task.priority;
-        let status = task.status;
-        let deadline = task.endDate;
-        let id = task.id;
+            console.log(`Estado de la tarea: ${status}`); // Verifica los valores de status
 
-        //Verificar si la tarea ya existe en el DOM
-        if (document.querySelector(`[data-id='${id}']`)) {
-            continue; // Si la tarea ya existe, salteo la iteración
-        } else {
-            let parsedStatus = "";
-
-            switch (status.toLowerCase()) { // Convertir a minúsculas para simplificar
-                case "backlog":
-                    parsedStatus = "backlog";
-                    break;
-                case "in progress":
-                case "in-progress":
-                    parsedStatus = "in-progress";
-                    break;
-                case "to do":
-                case "todo":
-                    parsedStatus = "todo";
-                    break;
-                case "blocked":
-                    parsedStatus = "blocked";
-                    break;
-                case "done":
-                    parsedStatus = "done";
-                    break;
-                default:
-                    console.log("no status :(");
+            // Verificar si la columna existe para este estado de tarea
+            if (!taskColumns[status]) {
+                console.error(`No se encontró una columna para el estado: ${status}`);
+                return;
             }
 
-            if (parsedStatus) {
-                let newTask = renderTaskElement(title, description, assigned, priority, deadline, status, id);
-                taskColumns[parsedStatus].appendChild(newTask);
-            }
-        }
+            const taskElement = createTaskElement(title, description, assignedTo, priority, endDate, status, id);
+            taskColumns[status].appendChild(taskElement);
+        });
     }
 }
 
-
-function renderTaskElement(title, description, assigned, priority, deadline, status, id = Date.now()) {
+// Crear elementos de tarea
+function createTaskElement(title, description, assigned, priority, deadline, status, id) {
     const taskElement = document.createElement('div');
-    taskElement.classList.add('box', 'task');
-
-    // Asignar clases de color según la prioridad
-    const priorityClass = {
-        'Low': 'priority-low',
-        'Medium': 'priority-medium',
-        'High': 'priority-high'
-    }[priority] || 'priority-low';
-
-    taskElement.classList.add(priorityClass);
+    taskElement.classList.add('box', 'task', `priority-${priority.toLowerCase()}`);
     taskElement.dataset.id = id;
-    // Hacer que la tarea sea draggable
     taskElement.draggable = true;
 
-    // Definir la imagen de perfil según el usuario asignado
-    const profilePics = {
-        'Persona1': '1.jpg',
-        'Persona2': '3.jpg',
-        'Persona3': '2.jpg'
-    };
+    const profilePics = { 'Persona1': '1.jpg', 'Persona2': '3.jpg', 'Persona3': '2.jpg' };
     const profilePic = profilePics[assigned] || '2.jpg';
 
     taskElement.innerHTML = `
@@ -168,189 +113,95 @@ function renderTaskElement(title, description, assigned, priority, deadline, sta
             </div>
         </div>
         <div class="details">
-            <p>
-                <i class="fa-solid fa-user"></i>
-                <strong>Asignado:</strong> ${assigned}
-            </p>
-            <p class="priority ${priority.toLowerCase()}">
-                <i class="fa-solid fa-tag"></i>
-                <strong>Prioridad:</strong> ${priority}
-            </p>
+            <p><i class="fa-solid fa-user"></i><strong>Asignado:</strong> ${assigned}</p>
+            <p class="priority ${priority.toLowerCase()}"><i class="fa-solid fa-tag"></i><strong>Prioridad:</strong> ${priority}</p>
         </div>
-        <p class="deadline">
-            <i class="fa-solid fa-clock"></i>
-            <strong>Fecha límite:</strong> ${deadline}
-        </p>
+        <p class="deadline"><i class="fa-solid fa-clock"></i><strong>Fecha límite:</strong> ${deadline}</p>
     `;
 
-    // Evento de arrastrar (dragstart)
-    taskElement.addEventListener('dragstart', function (event) {
-        event.dataTransfer.setData('text/plain', id); // Guardar el id de la tarea arrastrada
+    taskElement.addEventListener('dragstart', (event) => {
+        console.log("Iniciando arrastre de la tarea con ID:", id);
+        event.dataTransfer.setData('text/plain', id);
     });
-
-    // Evento de clic para editar la tarea
-    taskElement.addEventListener('click', function () {
-        openEditModal(id);
-    });
+    taskElement.addEventListener('click', () => openEditModal(id));
 
     return taskElement;
 }
 
-// Dark/Light Mode
+// Eventos drag and drop para mover tareas
+document.querySelectorAll('.column').forEach(column => {
+    column.addEventListener('dragover', (event) => {
+        event.preventDefault();
+    });
+
+    column.addEventListener('drop', (event) => {
+        event.preventDefault();
+        const taskId = event.dataTransfer.getData('text/plain');
+        const taskElement = document.querySelector(`[data-id="${taskId}"]`);
+        const newStatus = column.id;  // Obtenemos el nuevo estado (la columna de destino)
+
+        // Mover la tarea visualmente a la nueva columna
+        column.querySelector('.tasks').appendChild(taskElement);
+        console.log("Tarea con ID", taskId, "movida a la columna", newStatus);
+
+        // Actualizamos el status de la tarea en el backend
+        const title = taskElement.querySelector('h3').textContent;
+        const description = taskElement.querySelector('.description').textContent;
+        const assigned = taskElement.querySelector('.details p:first-child').textContent.split(': ')[1];
+        const priority = taskElement.querySelector('.priority').textContent.split(': ')[1];
+        const deadline = taskElement.querySelector('.deadline').textContent.split(': ')[1];
+
+        // Llamar a updateTask para actualizar el status en el backend
+        updateTask(taskId, title, description, assigned, priority, deadline, newStatus);
+    });
+});
+
+// Modo oscuro/claro
 toggleModeBtn.addEventListener('click', toggleMode);
 function toggleMode() {
-    let currentMode = document.documentElement.getAttribute('data-theme');
-
-    if (currentMode === 'light') {
-        document.documentElement.setAttribute('data-theme', 'dark');
-    } else {
-        document.documentElement.setAttribute('data-theme', 'light');
-    }
+    const currentMode = document.documentElement.getAttribute('data-theme');
+    document.documentElement.setAttribute('data-theme', currentMode === 'light' ? 'dark' : 'light');
 }
 
-// Change Background
+// Cambiar fondo
 backgroundSelector.addEventListener('change', changeBackground);
 function changeBackground() {
-    let selectedBackground = document.getElementById("backgroundSelector").value;
-
-    if (selectedBackground === "Default") {
-        document.getElementById("columnsContainer").style.backgroundImage = "";
-    } else {
-        document.getElementById("columnsContainer").style.backgroundImage = "url('" + selectedBackground + "')";
-    }
+    const selectedBackground = document.getElementById("backgroundSelector").value;
+    columnsContainer.style.backgroundImage = selectedBackground === "Default" ? "" : `url('${selectedBackground}')`;
 }
 
-// Inicio MODAL --------------------------------
+// Modales
+let currentTaskId = null;
 
 function openModal() {
     taskModal.classList.add('is-active');
-    taskForm.reset();  // Limpiar el formulario cuando se abre el modal
+    taskForm.reset();
 }
 
 function closeModal() {
     taskModal.classList.remove('is-active');
-    taskForm.reset();  // Limpiar el formulario cuando se cierra el modal
-    document.querySelector('.modal-card-title').textContent = 'Tarea'; // Resetear el título
-    currentTaskId = null; // Resetear el ID para nuevas tareas
+    taskForm.reset();
+    document.querySelector('.modal-card-title').textContent = 'Tarea';
+    currentTaskId = null;
 }
-
-addTaskButton.addEventListener('click', openModal);
-closeModalButton.addEventListener('click', closeModal);
-cancelTaskButton.addEventListener('click', closeModal);
 
 function openEditModal(taskId) {
-    currentTaskId = taskId; // Almacena el ID de la tarea que se está editando
+    currentTaskId = taskId;
     const taskElement = document.querySelector(`[data-id='${taskId}']`);
-
-    if (!taskElement) {
-        console.error("No se encontró el elemento de la tarea con ID:", taskId);
-        return;
-    }
-
-    // Verificar que todos los elementos existen antes de acceder a sus propiedades
-    const titleElement = taskElement.querySelector('h3');
-    const descriptionElement = taskElement.querySelector('.description');
-    const assignedElement = taskElement.querySelector('.details p:first-child');
-    const priorityElement = taskElement.querySelector('.priority');
-    const deadlineElement = taskElement.querySelector('.deadline');
-
-    if (titleElement && descriptionElement && assignedElement && priorityElement && deadlineElement) {
-        // Cargar la información de la tarea en los campos del formulario
-        taskForm['taskTitle'].value = titleElement.textContent;
-        taskForm['taskDescription'].value = descriptionElement.textContent;
-        taskForm['taskAssigned'].value = assignedElement.textContent.split(': ')[1];
-        taskForm['taskPriority'].value = priorityElement.textContent.split(': ')[1];
+    if (taskElement) {
+        taskForm['taskTitle'].value = taskElement.querySelector('h3').textContent;
+        taskForm['taskDescription'].value = taskElement.querySelector('.description').textContent;
+        taskForm['taskAssigned'].value = taskElement.querySelector('.details p:first-child').textContent.split(': ')[1];
+        taskForm['taskPriority'].value = taskElement.querySelector('.priority').textContent.split(': ')[1];
         taskForm['taskStatus'].value = taskElement.closest('.column').id;
-        taskForm['taskDeadline'].value = deadlineElement.textContent.split(': ')[1];
-    } else {
-        console.error("Error al cargar la información de la tarea. Verifica los selectores.");
-        return;
+        taskForm['taskDeadline'].value = taskElement.querySelector('.deadline').textContent.split(': ')[1];
+        document.querySelector('.modal-card-title').textContent = 'Editar Tarea';
+        taskModal.classList.add('is-active');
     }
-
-    // Cambiar el título del modal para indicar que es una edición
-    document.querySelector('.modal-card-title').textContent = 'Editar Tarea';
-
-    // Abrir el modal
-    taskModal.classList.add('is-active');
 }
 
-
-
-// Fin MODAL --------------------------------
-
-
-let currentTaskId = null;
-
-function createTaskElement(title, description, assigned, priority, deadline, status, id = Date.now()) {
-    const taskElement = document.createElement('div');
-    taskElement.classList.add('box', 'task');
-
-    // Asignar clases de color según la prioridad
-    const priorityClass = {
-        'Low': 'priority-low',
-        'Medium': 'priority-medium',
-        'High': 'priority-high'
-    }[priority] || 'priority-low'; // Valor predeterminado si no coincide
-
-    taskElement.classList.add(priorityClass); // Añadir la clase de color según la prioridad
-    taskElement.dataset.id = id;
-    taskElement.draggable = true;  // Hacer que la tarea sea draggable
-
-    // Definir la imagen de perfil según el usuario asignado
-    const profilePics = {
-        'Persona1': '1.jpg',
-        'Persona2': '3.jpg',
-        'Persona3': '2.jpg'
-    };
-    const profilePic = profilePics[assigned] || '2.jpg';
-
-    taskElement.innerHTML = `
-        <div class="task-header">
-            <img src="${profilePic}" alt="${assigned}" class="profile-pic">
-            <div class="task-title">
-                <h3>${title}</h3>
-                <p class="description">${description}</p>
-            </div>
-        </div>
-        <div class="details">
-            <p>
-                <i class="fa-solid fa-user"></i>
-                <strong>Asignado:</strong> ${assigned}
-            </p>
-            <p class="priority ${priority.toLowerCase()}">
-                <i class="fa-solid fa-tag"></i>
-                <strong>Prioridad:</strong> ${priority}
-            </p>
-        </div>
-        <p class="deadline">
-            <i class="fa-solid fa-clock"></i>
-            <strong>Fecha límite:</strong> ${deadline}
-        </p>
-    `;
-
-    // Evento de arrastrar (dragstart)
-    taskElement.addEventListener('dragstart', function (event) {
-        event.dataTransfer.setData('text/plain', id); // Guardar el id de la tarea arrastrada
-    });
-
-    // Evento de clic para editar la tarea
-    taskElement.addEventListener('click', function () {
-        openEditModal(id);
-    });
-
-    // Evento de clic para editar la tarea
-    taskElement.addEventListener('click', function () {
-        openEditModal(id);  // Abrir el modal para editar
-    });
-
-    postNewTask(title, description, assigned, deadline, status, priority);
-    return taskElement;
-}
-
-
-document.getElementById('saveTaskBtn').addEventListener('click', async function (event) {
-    event.preventDefault();
-
+// Guardar o actualizar tarea
+saveTaskButton.addEventListener('click', () => {
     const title = taskForm['taskTitle'].value;
     const description = taskForm['taskDescription'].value;
     const assigned = taskForm['taskAssigned'].value;
@@ -359,221 +210,27 @@ document.getElementById('saveTaskBtn').addEventListener('click', async function 
     const deadline = taskForm['taskDeadline'].value;
 
     if (currentTaskId) {
-        // Enviar una solicitud PATCH para actualizar la tarea
-        await updateTask(currentTaskId, title, description, assigned, priority, deadline, status);
-
-        // Actualizar el DOM después de un PATCH exitoso
-        updateTaskInDOM(currentTaskId, title, description, assigned, priority, deadline, status);
+        // Editar tarea existente
+        updateTask(currentTaskId, title, description, assigned, priority, deadline, status);
     } else {
-        // Crear una nueva tarea
-        const newTask = createTaskElement(title, description, assigned, priority, deadline, status);
-        taskColumns[status].appendChild(newTask);
-        console.log("crear nueva");
+        // Crear nueva tarea
+        postNewTask(title, description, assigned, deadline, status, priority);
     }
 
-    closeModal();
+    closeModal();  // Cierra el modal después de guardar o actualizar la tarea
 });
 
-function updateTaskInDOM(id, title, description, assigned, priority, deadline, status) {
-    const taskElement = document.querySelector(`[data-id='${id}']`);
-
-    if (taskElement) {
-        // Actualizar los elementos del DOM con los nuevos valores
-        taskElement.querySelector('h3').textContent = title;
-        taskElement.querySelector('.description').textContent = description;
-        taskElement.querySelector('.details p:first-child').innerHTML = `<i class="fa-solid fa-user"></i><strong>Asignado:</strong> ${assigned}`;
-        taskElement.querySelector('.priority').innerHTML = `<i class="fa-solid fa-tag"></i><strong>Prioridad:</strong> ${priority}`;
-        taskElement.querySelector('.priority').className = `priority ${priority.toLowerCase()}`;
-        taskElement.querySelector('.deadline').innerHTML = `<i class="fa-solid fa-clock"></i><strong>Fecha límite:</strong> ${deadline}`;
-
-        // Mover la tarea a la nueva columna si el estado ha cambiado
-        const currentColumn = taskElement.closest('.tasks');
-        const newColumn = taskColumns[status];
-        if (currentColumn !== newColumn) {
-            newColumn.appendChild(taskElement);
-        }
-    } else {
-        console.error("No se pudo encontrar la tarea en el DOM para actualizarla.");
-    }
-}
-
-async function updateTask(id, title, description, assigned, priority, deadline, status) {
-    const updatedTask = {
-        title: title,
-        description: description,
-        assignedTo: assigned,
-        priority: priority,
-        endDate: deadline,
-        status: status
-    };
-
-    try {
-        const response = await fetch(`${serverURL}${id}`, {
-            method: "PATCH",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(updatedTask)
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        console.log("Task updated successfully:", result);
-        return result;  // Devolver el resultado si necesitas más acciones
-
-    } catch (error) {
-        console.error("Error updating task:", error);
-    }
-}
-
-
-
-
-
-// FIN ADD TASKS --------------------------------
-
-// Inicio DRAG AND DROP --------------------------------
-Object.keys(taskColumns).forEach(status => {
-    const column = taskColumns[status];
-
-    // Evento de "dragover" para permitir el "drop"
-    column.addEventListener('dragover', function (event) {
-        event.preventDefault();
-    });
-
-    // Evento de "drop" para manejar el movimiento de tareas
-    column.addEventListener('drop', function (event) {
-        event.preventDefault();
-
-        const taskId = event.dataTransfer.getData('text/plain');
-        const taskElement = document.querySelector(`[data-id='${taskId}']`);
-
-        // Mover el elemento de la tarea a la nueva columna
-        column.appendChild(taskElement);
-
-        // Actualizar el "status" de la tarea en el backend
-        const newStatus = status;  // El nuevo status es el ID de la columna de destino
-        updateTaskStatus(taskId, newStatus);  // Llamar a la función para hacer PATCH
-    });
-});
-
-// Función para actualizar el "status" de la tarea con un PATCH
-async function updateTaskStatus(taskId, newStatus) {
-    try {
-        const response = await fetch(`${serverURL}${taskId}`, {
-            method: "PATCH",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ status: newStatus })  // Solo actualizar el campo "status"
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        console.log("Task status updated successfully:", result);
-
-    } catch (error) {
-        console.error("Error updating task status:", error);
-    }
-}
-
-// Fin DRAG AND DROP --------------------------------
-
-// Función para actualizar una tarea
-async function updateTask(id, title, description, assigned, priority, deadline, status) {
-    // Verificar que el ID no sea undefined o vacío
-    if (!id) {
-        console.error("Task ID is missing or invalid.");
-        return;
-    }
-
-    // Crear el objeto con los datos de la tarea que deseas actualizar
-    const updatedTask = {
-        title: title,
-        description: description,
-        assignedTo: assigned,
-        priority: priority,
-        endDate: deadline,
-        status: status
-    };
-
-    try {
-        // Realizar la solicitud PATCH usando fetch
-        const response = await fetch(`${serverURL}${id}`, {
-            method: "PATCH",  // Método HTTP PATCH
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(updatedTask)
-        });
-
-        // Verificar si la solicitud fue exitosa
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        // Obtener la respuesta del servidor
-        const result = await response.json();
-        console.log("Task updated successfully:", result);
-
-        // Actualizar el DOM o realizar otras acciones necesarias
-
-    } catch (error) {
-        console.error("Error updating task:", error);
-    }
-}
-
-document.getElementById('deleteTaskBtn').addEventListener('click', async function (event) {
-    event.preventDefault();
-
+// Eliminar tarea
+deleteTaskButton.addEventListener('click', () => {
     if (currentTaskId) {
-        // Confirmar eliminación
-        const confirmation = confirm("¿Está seguro de que quiere eliminar esta tarea?");
-        if (confirmation) {
-            // Enviar solicitud DELETE para eliminar la tarea
-            await deleteTask(currentTaskId);
-            // Eliminar la tarea del DOM
-            deleteTaskFromDOM(currentTaskId);
-            // Cerrar el modal
-            closeModal();
-        }
+        deleteTask(currentTaskId);  // Elimina la tarea si está en modo edición
+        closeModal();  // Cierra el modal después de eliminar la tarea
     }
 });
 
-// Funcion delete
-async function deleteTask(id) {
-    try {
-        const response = await fetch(`${serverURL}${id}`, {
-            method: "DELETE",
-            headers: {
-                "Content-Type": "application/json"
-            }
-        });
+addTaskButton.addEventListener('click', openModal);
+closeModalButton.addEventListener('click', closeModal);
+cancelTaskButton.addEventListener('click', closeModal);
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        console.log("Task deleted successfully.");
-
-    } catch (error) {
-        console.error("Error deleting task:", error);
-    }
-}
-
-// Funcion delete del DOM, asi no tengo que esperar a recargar la pagina para mostrar los updates
-function deleteTaskFromDOM(id) {
-    const taskElement = document.querySelector(`[data-id='${id}']`);
-    if (taskElement) {
-        taskElement.remove();
-        console.log("Task removed from the DOM.");
-    } else {
-        console.error("No se pudo encontrar la tarea en el DOM para eliminarla.");
-    }
-}
+// Llamar al renderizado de tareas
+renderTasks();
